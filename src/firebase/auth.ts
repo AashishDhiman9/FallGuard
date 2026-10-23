@@ -10,6 +10,18 @@ import { ref, get, set, serverTimestamp } from 'firebase/database';
 import { auth, database, isFirebaseConfigured } from './config';
 import { UserProfile, UserRole } from '../types';
 
+const USER_PROFILE_TIMEOUT_MS = 10_000;
+
+function createFallbackProfile(fbUser: FirebaseUser): UserProfile {
+  return {
+    id: fbUser.uid,
+    name: fbUser.displayName || 'User',
+    email: fbUser.email || '',
+    role: 'user',
+    createdAt: Date.now(),
+  };
+}
+
 /**
  * Registers a new user with email, password, display name, and designated role.
  * Writes the initial profile to Realtime Database under `/users/${uid}`.
@@ -117,7 +129,7 @@ export async function logoutFromFirebase(): Promise<void> {
  * Subscribes to Firebase Authentication state and resolves user role from RTDB.
  */
 export function subscribeToAuthState(
-  callback: (user: UserProfile | null, loading: boolean) => void
+  callback: (user: UserProfile | null, loading: boolean, notice?: string) => void
 ): () => void {
   const firebaseAuth = auth;
   const firebaseDatabase = database;
@@ -134,7 +146,18 @@ export function subscribeToAuthState(
 
     try {
       const userRef = ref(firebaseDatabase, `users/${fbUser.uid}`);
-      const snapshot = await get(userRef);
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
+      const snapshot = await Promise.race([
+        get(userRef),
+        new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(
+            () => reject(new Error('Timed out while loading the Firebase user profile.')),
+            USER_PROFILE_TIMEOUT_MS
+          );
+        }),
+      ]).finally(() => {
+        if (timeoutId !== undefined) clearTimeout(timeoutId);
+      });
 
       if (snapshot.exists()) {
         const val = snapshot.val();
@@ -157,18 +180,24 @@ export function subscribeToAuthState(
         callback(profile, false);
       } else {
         // Fallback profile if database node is pending
-        const fallbackProfile: UserProfile = {
-          id: fbUser.uid,
-          name: fbUser.displayName || 'User',
-          email: fbUser.email || '',
-          role: 'user',
-          createdAt: Date.now(),
-        };
-        callback(fallbackProfile, false);
+        callback(createFallbackProfile(fbUser), false);
       }
     } catch (err) {
       console.error('Error fetching user profile from database:', err);
-      callback(null, false);
+      // Authentication succeeded; keep the signed-in user in the app if the
+      // profile database is temporarily unavailable.
+      callback(
+        createFallbackProfile(fbUser),
+        false,
+        'Signed in, but the Firebase user profile could not be loaded. Check the Realtime Database URL and access rules.'
+      );
     }
+  }, (error) => {
+    console.error('Firebase auth state verification failed:', error);
+    callback(
+      null,
+      false,
+      'Firebase session verification failed. Check the Firebase web configuration and authorized domains.'
+    );
   });
 }

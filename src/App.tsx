@@ -26,11 +26,12 @@ import {
   subscribeToLinkedPatients,
   updateUserSettingsInDB,
 } from './firebase/database';
-import { RefreshCw, Database } from 'lucide-react';
+import { AlertCircle, RefreshCw, Database } from 'lucide-react';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
+  const [authNotice, setAuthNotice] = useState<string | null>(null);
   const [currentView, setCurrentView] = useState<string>('dashboard');
 
   // Operational states
@@ -42,8 +43,23 @@ export default function App() {
   // 1. Subscribe to Firebase Auth state on mount
   useEffect(() => {
     if (isFirebaseConfigured) {
-      const unsubscribe = subscribeToAuthState((user, loading) => {
+      let authStateResolved = false;
+      const authTimeout = window.setTimeout(() => {
+        if (authStateResolved) return;
+
+        setAuthNotice(
+          'Firebase could not verify the session in time. You can still sign in or use a demo profile. Check the Firebase web configuration and authorized domains if this continues.'
+        );
+        setIsAuthLoading(false);
+      }, 15_000);
+
+      const unsubscribe = subscribeToAuthState((user, loading, notice) => {
         setIsAuthLoading(loading);
+        if (!loading) {
+          authStateResolved = true;
+          window.clearTimeout(authTimeout);
+          setAuthNotice(notice ?? null);
+        }
         if (user) {
           setCurrentUser(user);
         } else {
@@ -51,7 +67,10 @@ export default function App() {
           setCurrentUser(null);
         }
       });
-      return () => unsubscribe();
+      return () => {
+        window.clearTimeout(authTimeout);
+        unsubscribe();
+      };
     } else {
       // In local demo environment without Firebase env keys, default to Eleanor or prompt login
       setIsAuthLoading(false);
@@ -195,6 +214,7 @@ export default function App() {
     if (!currentUser?.isDemo && isFirebaseConfigured) {
       await logoutFromFirebase();
     }
+    setAuthNotice(null);
     setCurrentUser(null);
     setCurrentView('dashboard');
   };
@@ -226,7 +246,9 @@ export default function App() {
   if (!currentUser) {
     return (
       <AuthScreen
+        authNotice={authNotice}
         onLogin={(user) => {
+          setAuthNotice(null);
           setCurrentUser(user);
           setCurrentView('dashboard');
         }}
@@ -250,6 +272,13 @@ export default function App() {
 
       {/* Main Viewport Content Area */}
       <main className="flex-1 flex flex-col min-w-0">
+        {authNotice && (
+          <div className="mx-4 mt-4 md:mx-8 p-3 bg-amber-50 border border-amber-200 rounded text-xs text-amber-900 flex items-center gap-2" role="status">
+            <AlertCircle className="w-4 h-4 text-amber-700 shrink-0" />
+            <span>{authNotice}</span>
+          </div>
+        )}
+
         {/* Top Operational Bar */}
         <div className="bg-white border-b border-slate-200 px-4 md:px-8 py-2.5 flex items-center justify-between text-xs">
           <div className="flex items-center gap-2 text-slate-500">

@@ -7,9 +7,10 @@ import { registerWithFirebase, loginWithFirebase } from '../firebase/auth';
 
 interface AuthScreenProps {
   onLogin: (user: UserProfile) => void;
+  authNotice?: string | null;
 }
 
-export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
+export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, authNotice }) => {
   const [tab, setTab] = useState<'login' | 'register'>('login');
   const [role, setRole] = useState<UserRole>('user');
   const [email, setEmail] = useState('');
@@ -128,6 +129,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
 
         {/* Main Card */}
         <div className="bg-white py-6 px-6 border border-slate-200 rounded shadow-xs space-y-5">
+          {authNotice && (
+            <div className="p-2.5 bg-amber-50 border border-amber-200 rounded text-xs text-amber-900 flex items-center gap-2" role="status">
+              <AlertCircle className="w-4 h-4 text-amber-700 shrink-0" />
+              <span>{authNotice}</span>
+            </div>
+          )}
+
           {/* Tabs: Sign In / Register */}
           <div className="grid grid-cols-2 border-b border-slate-200 pb-3 gap-2">
             <button
