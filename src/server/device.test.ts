@@ -4,7 +4,6 @@ import express from 'express';
 import type { Server } from 'http';
 import { deviceRouter } from './deviceRoutes';
 import {
-  getDeviceRecord,
   getFallEvent,
   registerLocalTestDevice,
 } from './adminDb';

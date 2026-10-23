@@ -119,19 +119,21 @@ export async function logoutFromFirebase(): Promise<void> {
 export function subscribeToAuthState(
   callback: (user: UserProfile | null, loading: boolean) => void
 ): () => void {
-  if (!isFirebaseConfigured || !auth || !database) {
+  const firebaseAuth = auth;
+  const firebaseDatabase = database;
+  if (!isFirebaseConfigured || !firebaseAuth || !firebaseDatabase) {
     callback(null, false);
     return () => {};
   }
 
-  return onAuthStateChanged(auth, async (fbUser) => {
+  return onAuthStateChanged(firebaseAuth, async (fbUser) => {
     if (!fbUser) {
       callback(null, false);
       return;
     }
 
     try {
-      const userRef = ref(database, `users/${fbUser.uid}`);
+      const userRef = ref(firebaseDatabase, `users/${fbUser.uid}`);
       const snapshot = await get(userRef);
 
       if (snapshot.exists()) {

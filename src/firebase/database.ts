@@ -146,12 +146,13 @@ export function subscribeToLinkedPatients(
   caretakerUid: string,
   callback: (patients: LinkedPatient[]) => void
 ): Unsubscribe {
-  if (!isFirebaseConfigured || !database || !caretakerUid) {
+  const firebaseDatabase = database;
+  if (!isFirebaseConfigured || !firebaseDatabase || !caretakerUid) {
     callback([]);
     return () => {};
   }
 
-  const caretakerPatientsRef = ref(database, `caretakers/${caretakerUid}/patients`);
+  const caretakerPatientsRef = ref(firebaseDatabase, `caretakers/${caretakerUid}/patients`);
 
   return onValue(caretakerPatientsRef, async (snapshot) => {
     if (!snapshot.exists()) {
@@ -169,7 +170,7 @@ export function subscribeToLinkedPatients(
       const patientsData: LinkedPatient[] = [];
 
       for (const pUid of patientUids) {
-        const pRef = ref(database, `users/${pUid}`);
+        const pRef = ref(firebaseDatabase, `users/${pUid}`);
         const pSnap = await get(pRef);
 
         if (pSnap.exists()) {
@@ -181,7 +182,7 @@ export function subscribeToLinkedPatients(
           let lastSeenIso = new Date().toISOString();
 
           if (pVal.deviceId) {
-            const devSnap = await get(ref(database, `devices/${pVal.deviceId}`));
+            const devSnap = await get(ref(firebaseDatabase, `devices/${pVal.deviceId}`));
             if (devSnap.exists()) {
               const dData = devSnap.val();
               devStatus = dData.status || 'unknown';

@@ -29,6 +29,10 @@ interface UserDashboardProps {
   isLoading?: boolean;
 }
 
+function deriveCurrentFallStatus(activeAlert: FallEvent | undefined): FallDetectionStatus {
+  return activeAlert ? 'fall_detected' : 'normal';
+}
+
 export const UserDashboard: React.FC<UserDashboardProps> = ({
   user,
   device,
@@ -43,7 +47,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
   // 2. Fall detection status configuration
   // If there's an active fall event for this user, current status is 'fall_detected'
   const activeAlert = events.find((e) => e.userId === user.id && e.status === 'active');
-  const currentFallStatus: FallDetectionStatus = activeAlert ? 'fall_detected' : 'normal';
+  const currentFallStatus = deriveCurrentFallStatus(activeAlert);
   const fallConfig = getFallStatusConfig(currentFallStatus);
 
   // 3. Latest fall alert (most recent event in general for this user)

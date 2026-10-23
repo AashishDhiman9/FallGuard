@@ -1,8 +1,9 @@
-import admin from 'firebase-admin';
+import { cert, getApps, initializeApp } from 'firebase-admin/app';
+import { getDatabase, type Database } from 'firebase-admin/database';
 import type { FallEvent, DeviceInfo } from '../types';
 
 let adminInitialized = false;
-let adminDb: admin.database.Database | null = null;
+let adminDb: Database | null = null;
 
 // Local development fallback store (in-memory) when service account key is omitted
 const localFallbackDevices: Record<string, {
@@ -45,13 +46,13 @@ export function initFirebaseAdmin(): boolean {
   if (serviceAccountJson && serviceAccountJson.trim() !== '') {
     try {
       const parsedAccount = JSON.parse(serviceAccountJson);
-      if (admin.apps.length === 0) {
-        admin.initializeApp({
-          credential: admin.credential.cert(parsedAccount),
+      if (getApps().length === 0) {
+        initializeApp({
+          credential: cert(parsedAccount),
           databaseURL,
         });
       }
-      adminDb = admin.database();
+      adminDb = getDatabase();
       adminInitialized = true;
       console.log('[FallGuard Admin] Firebase Admin SDK successfully connected to Realtime Database.');
       return true;
