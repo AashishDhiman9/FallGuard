@@ -1,0 +1,54 @@
+{
+  "rules": {
+    "users": {
+      "$uid": {
+        // Patients can read their own profile; Caretakers can read their linked patients' profiles
+        ".read": "auth != null && (auth.uid === $uid || root.child('caretakers').child(auth.uid).child('patients').child($uid).val() === true)",
+
+        // Initial creation allowed by authenticated user; Role & createdAt are immutable once set
+        ".write": "auth != null && auth.uid === $uid && (!data.exists() || (data.child('role').val() === newData.child('role').val() && data.child('createdAt').val() === newData.child('createdAt').val()))",
+
+        ".validate": "newData.hasChildren(['email', 'role']) && (newData.child('role').val() === 'user' || newData.child('role').val() === 'caretaker')"
+      }
+    },
+
+    "caretakers": {
+      "$caretakerUid": {
+        ".read": "auth != null && auth.uid === $caretakerUid",
+        "patients": {
+          "$patientUid": {
+            // Caretaker can read list of assigned patients; Patient can confirm link to caretaker
+            ".read": "auth != null && (auth.uid === $caretakerUid || auth.uid === $patientUid)",
+            // Caretaker or authorized patient can establish link
+            ".write": "auth != null && (auth.uid === $caretakerUid || auth.uid === $patientUid)"
+          }
+        }
+      }
+    },
+
+    "devices": {
+      "$deviceId": {
+        // Patient who owns the device or their linked caretaker can read device status
+        ".read": "auth != null && (data.child('patientUid').val() === auth.uid || root.child('caretakers').child(auth.uid).child('patients').child(data.child('patientUid').val()).val() === true)",
+
+        // Device telemetry writes are strictly reserved for trusted server / hardware ingestion.
+        // Patient can only bind their own patientUid during initial device linking.
+        ".write": "auth != null && (!data.exists() || data.child('patientUid').val() === auth.uid || (newData.child('patientUid').val() === auth.uid && (!data.hasChild('patientUid') || data.child('patientUid').val() === '')))"
+      }
+    },
+
+    "fall_events": {
+      // Indexed for fast queries by patientUid or status
+      ".indexOn": ["patientUid", "status", "timestamp"],
+
+      "$eventId": {
+        // Visible only to the affected patient or their designated caretaker
+        ".read": "auth != null && (data.child('patientUid').val() === auth.uid || root.child('caretakers').child(auth.uid).child('patients').child(data.child('patientUid').val()).val() === true)",
+
+        // Creation of trusted fall events is restricted to trusted hardware / server-side processes.
+        // Caretakers can only acknowledge or resolve existing alerts.
+        ".write": "auth != null && data.exists() && root.child('caretakers').child(auth.uid).child('patients').child(data.child('patientUid').val()).val() === true && newData.child('patientUid').val() === data.child('patientUid').val() && newData.child('timestamp').val() === data.child('timestamp').val() && (newData.child('status').val() === 'acknowledged' || newData.child('status').val() === 'resolved')"
+      }
+    }
+  }
+}

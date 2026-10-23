@@ -1,0 +1,6 @@
+{
+  "name": "FallGuard - Patient Fall Detection & Caretaker Monitoring",
+  "description": "Clean, minimal healthcare monitoring web application for fall detection, patient status, and caretaker alerts.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

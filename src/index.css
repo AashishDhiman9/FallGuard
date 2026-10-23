@@ -1,0 +1,20 @@
+@import "tailwindcss";
+
+:root {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: #0f172a;
+  background-color: #f8fafc;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background-color: #f8fafc;
+  color: #0f172a;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Ensure tabular figures for all timestamps and codes */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
