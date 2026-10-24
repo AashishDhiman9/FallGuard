@@ -14,7 +14,7 @@ export const deviceRouter = Router();
  * POST /api/device/heartbeat
  * Periodic status telemetry ping from ESP32-C3
  */
-deviceRouter.post('/heartbeat', async (req: Request, res: Response): Promise<void> => {
+export async function handleDeviceHeartbeat(req: Request, res: Response): Promise<void> {
   // 1. Authenticate device
   const auth = verifyDeviceAuth(req);
   if (!auth.authenticated || !auth.deviceId) {
@@ -78,13 +78,15 @@ deviceRouter.post('/heartbeat', async (req: Request, res: Response): Promise<voi
       message: 'Failed to record device heartbeat telemetry.',
     });
   }
-});
+}
+
+deviceRouter.post('/heartbeat', handleDeviceHeartbeat);
 
 /**
  * POST /api/device/event
  * Confirmed fall event dispatch from ESP32-C3 after 15s local cancellation countdown
  */
-deviceRouter.post('/event', async (req: Request, res: Response): Promise<void> => {
+export async function handleDeviceEvent(req: Request, res: Response): Promise<void> {
   // 1. Authenticate device
   const auth = verifyDeviceAuth(req);
   if (!auth.authenticated || !auth.deviceId) {
@@ -121,7 +123,19 @@ deviceRouter.post('/event', async (req: Request, res: Response): Promise<void> =
 
   // 3. Resolve patient bound to authorized device ID
   // NEVER trust a patientUid freely supplied by incoming client requests!
-  const patient = await getPatientByDevice(deviceId);
+  let patient: { uid: string; name: string } | null;
+  try {
+    patient = await getPatientByDevice(deviceId);
+  } catch (err) {
+    console.error(`Error resolving patient for ${deviceId}:`, err);
+    res.status(500).json({
+      status: 'error',
+      code: 'DATABASE_ERROR',
+      message: 'Failed to resolve the device owner from the database.',
+    });
+    return;
+  }
+
   if (!patient) {
     res.status(400).json({
       status: 'error',
@@ -199,4 +213,6 @@ deviceRouter.post('/event', async (req: Request, res: Response): Promise<void> =
       message: 'Failed to record fall event in database.',
     });
   }
-});
+}
+
+deviceRouter.post('/event', handleDeviceEvent);

@@ -2,7 +2,8 @@ import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
 import type { Server } from 'http';
-import { deviceRouter } from './deviceRoutes';
+import vercelHeartbeatHandler from '../../api/device/heartbeat';
+import vercelEventHandler from '../../api/device/event';
 import {
   getFallEvent,
   registerLocalTestDevice,
@@ -20,7 +21,8 @@ let baseUrl: string;
 before(async () => {
   const app = express();
   app.use(express.json({ limit: '64kb' }));
-  app.use('/api/device', deviceRouter);
+  app.all('/api/device/heartbeat', vercelHeartbeatHandler);
+  app.all('/api/device/event', vercelEventHandler);
 
   // Register local test device mappings
   registerLocalTestDevice('FG-8821-X', 'user-eleanor', 'Eleanor Vance');
@@ -285,4 +287,51 @@ test('11. Duplicate event ID returns 200 OK without creating duplicate record (i
   assert.equal(secondData.status, 'ok');
   assert.equal(secondData.duplicate, true);
   assert.equal(secondData.eventId, duplicateId);
+});
+
+test('12. Vercel device endpoints reject non-POST methods', async () => {
+  const res = await fetch(`${baseUrl}/api/device/heartbeat`, { method: 'GET' });
+
+  assert.equal(res.status, 405);
+  assert.equal(res.headers.get('allow'), 'POST');
+  const data = await res.json();
+  assert.equal(data.code, 'METHOD_NOT_ALLOWED');
+});
+
+test('13. Production requests fail instead of writing to the in-memory fallback', async () => {
+  const previousVercel = process.env.VERCEL;
+  process.env.VERCEL = '1';
+
+  try {
+    const heartbeatRes = await fetch(`${baseUrl}/api/device/heartbeat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Device-Id': 'FG-8821-X',
+        'X-Device-Token': 'valid_secret_token_8821',
+      },
+      body: JSON.stringify({ batteryLevel: 67 }),
+    });
+    assert.equal(heartbeatRes.status, 500);
+    assert.equal((await heartbeatRes.json()).code, 'DATABASE_ERROR');
+
+    const eventRes = await fetch(`${baseUrl}/api/device/event`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Device-Id': 'FG-8821-X',
+        'X-Device-Token': 'valid_secret_token_8821',
+      },
+      body: JSON.stringify({
+        eventId: `PRODUCTION_TEST_${Date.now()}`,
+        type: 'confirmed_fall',
+        countdownCompleted: true,
+      }),
+    });
+    assert.equal(eventRes.status, 500);
+    assert.equal((await eventRes.json()).code, 'DATABASE_ERROR');
+  } finally {
+    if (previousVercel === undefined) delete process.env.VERCEL;
+    else process.env.VERCEL = previousVercel;
+  }
 });

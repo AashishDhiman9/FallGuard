@@ -53,24 +53,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, authNotice }) =
           // onAuthStateChanged in App will automatically sync the profile from RTDB
         }
       } else {
-        // Fallback for demo when Firebase config variables have not yet been provided in .env
-        const mockUser: UserProfile = {
-          id: `demo-${Date.now()}`,
-          name: tab === 'register' ? name.trim() : (role === 'user' ? 'Eleanor Vance' : 'Dr. Marcus Chen, RN'),
-          email: email.trim(),
-          role: role,
-          createdAt: Date.now(),
-          deviceId: role === 'user' ? (deviceId.trim().toUpperCase() || 'FG-8821-X') : undefined,
-          caretakerName: role === 'user' ? 'Dr. Marcus Chen, RN' : undefined,
-          caretakerEmail: role === 'user' ? 'marcus.chen@carenetwork.org' : undefined,
-          isDemo: true,
-          notifications: {
-            sms: true,
-            email: true,
-            push: true,
-          },
-        };
-        onLogin(mockUser);
+        setError('Live sign-in is unavailable because Firebase is not configured. Configure Firebase or choose one of the demo profiles below.');
       }
     } catch (err: unknown) {
       const fbErr = err as { code?: string; message?: string };

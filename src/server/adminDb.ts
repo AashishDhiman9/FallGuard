@@ -5,6 +5,12 @@ import type { FallEvent, DeviceInfo } from '../types';
 let adminInitialized = false;
 let adminDb: Database | null = null;
 
+export function isProductionRuntime(): boolean {
+  return process.env.NODE_ENV === 'production' ||
+    process.env.VERCEL === '1' ||
+    Boolean(process.env.VERCEL_ENV);
+}
+
 // Local development fallback store (in-memory) when service account key is omitted
 const localFallbackDevices: Record<string, {
   deviceId: string;
@@ -39,11 +45,14 @@ export function initFirebaseAdmin(): boolean {
   if (adminInitialized) return adminDb !== null;
 
   const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
-  const databaseURL =
-    process.env.VITE_FIREBASE_DATABASE_URL ||
-    'https://fallguard-929ff-default-rtdb.firebaseio.com';
+  const production = isProductionRuntime();
+  const databaseURL = process.env.FIREBASE_DATABASE_URL || (
+    production
+      ? ''
+      : process.env.VITE_FIREBASE_DATABASE_URL || 'https://fallguard-929ff-default-rtdb.firebaseio.com'
+  );
 
-  if (serviceAccountJson && serviceAccountJson.trim() !== '') {
+  if (serviceAccountJson?.trim() && databaseURL) {
     try {
       const parsedAccount = JSON.parse(serviceAccountJson);
       if (getApps().length === 0) {
@@ -62,8 +71,21 @@ export function initFirebaseAdmin(): boolean {
   }
 
   adminInitialized = true;
-  console.log('[FallGuard Admin] Running in local/test mode with deterministic database adapter.');
+  if (production) {
+    console.error('[FallGuard Admin] Firebase Admin is unavailable in production. Configure FIREBASE_SERVICE_ACCOUNT_KEY and FIREBASE_DATABASE_URL.');
+  } else {
+    console.log('[FallGuard Admin] Running in local/test mode with deterministic database adapter.');
+  }
   return false;
+}
+
+function getAdminDatabaseOrLocalFallback(): Database | null {
+  initFirebaseAdmin();
+  if (adminDb) return adminDb;
+  if (isProductionRuntime()) {
+    throw new Error('Firebase Admin is required for production device API requests. Configure FIREBASE_SERVICE_ACCOUNT_KEY and FIREBASE_DATABASE_URL.');
+  }
+  return null;
 }
 
 /**
@@ -73,22 +95,23 @@ export function initFirebaseAdmin(): boolean {
 export async function getPatientByDevice(
   deviceId: string
 ): Promise<{ uid: string; name: string } | null> {
-  initFirebaseAdmin();
+  const firebaseDatabase = getAdminDatabaseOrLocalFallback();
   const cleanId = deviceId.trim().toUpperCase();
 
-  if (adminDb) {
+  if (firebaseDatabase) {
     try {
-      const devSnap = await adminDb.ref(`devices/${cleanId}`).once('value');
+      const devSnap = await firebaseDatabase.ref(`devices/${cleanId}`).once('value');
       if (!devSnap.exists()) return null;
       const devVal = devSnap.val();
       const patientUid = devVal.patientUid;
       if (!patientUid) return null;
 
-      const userSnap = await adminDb.ref(`users/${patientUid}`).once('value');
+      const userSnap = await firebaseDatabase.ref(`users/${patientUid}`).once('value');
       const userName = userSnap.exists() ? userSnap.val().name || 'Monitored Patient' : 'Monitored Patient';
       return { uid: patientUid, name: userName };
     } catch (err) {
       console.error(`[FallGuard Admin] Error resolving patient for ${cleanId}:`, err);
+      if (isProductionRuntime()) throw err;
       return null;
     }
   }
@@ -111,7 +134,7 @@ export async function updateDeviceHeartbeat(
     firmwareVersion?: string;
   }
 ): Promise<void> {
-  initFirebaseAdmin();
+  const firebaseDatabase = getAdminDatabaseOrLocalFallback();
   const cleanId = deviceId.trim().toUpperCase();
 
   const updates: Record<string, unknown> = {
@@ -125,8 +148,8 @@ export async function updateDeviceHeartbeat(
     updates.firmwareVersion = data.firmwareVersion;
   }
 
-  if (adminDb) {
-    await adminDb.ref(`devices/${cleanId}`).update(updates);
+  if (firebaseDatabase) {
+    await firebaseDatabase.ref(`devices/${cleanId}`).update(updates);
     return;
   }
 
@@ -154,9 +177,9 @@ export async function updateDeviceHeartbeat(
  * Used for strict idempotency enforcement.
  */
 export async function getFallEvent(eventId: string): Promise<FallEvent | null> {
-  initFirebaseAdmin();
-  if (adminDb) {
-    const snap = await adminDb.ref(`fall_events/${eventId}`).once('value');
+  const firebaseDatabase = getAdminDatabaseOrLocalFallback();
+  if (firebaseDatabase) {
+    const snap = await firebaseDatabase.ref(`fall_events/${eventId}`).once('value');
     if (!snap.exists()) return null;
     return snap.val() as FallEvent;
   }
@@ -168,9 +191,9 @@ export async function getFallEvent(eventId: string): Promise<FallEvent | null> {
  * Records a verified fall event into Realtime Database.
  */
 export async function recordFallEvent(event: FallEvent): Promise<void> {
-  initFirebaseAdmin();
-  if (adminDb) {
-    await adminDb.ref(`fall_events/${event.id}`).set(event);
+  const firebaseDatabase = getAdminDatabaseOrLocalFallback();
+  if (firebaseDatabase) {
+    await firebaseDatabase.ref(`fall_events/${event.id}`).set(event);
     return;
   }
 
@@ -185,6 +208,9 @@ export function registerLocalTestDevice(
   patientUid: string,
   patientName: string
 ) {
+  if (isProductionRuntime()) {
+    throw new Error('Local fallback devices are only available outside production.');
+  }
   localFallbackDevices[deviceId.trim().toUpperCase()] = {
     deviceId: deviceId.trim().toUpperCase(),
     patientUid,

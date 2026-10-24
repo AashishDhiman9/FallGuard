@@ -35,9 +35,16 @@ export default function App() {
   const [currentView, setCurrentView] = useState<string>('dashboard');
 
   // Operational states
-  const [device, setDevice] = useState<DeviceInfo>(INITIAL_DEVICE_INFO);
-  const [events, setEvents] = useState<FallEvent[]>(INITIAL_FALL_EVENTS);
-  const [patients, setPatients] = useState<LinkedPatient[]>(INITIAL_LINKED_PATIENTS);
+  const [device, setDevice] = useState<DeviceInfo>({
+    id: 'Unassigned',
+    serialNumber: 'Not paired',
+    macAddress: 'No device paired',
+    firmwareVersion: 'Awaiting sync',
+    status: 'not_connected',
+    lastSync: new Date().toISOString(),
+  });
+  const [events, setEvents] = useState<FallEvent[]>([]);
+  const [patients, setPatients] = useState<LinkedPatient[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
   // 1. Subscribe to Firebase Auth state on mount
@@ -72,11 +79,47 @@ export default function App() {
         unsubscribe();
       };
     } else {
-      // In local demo environment without Firebase env keys, default to Eleanor or prompt login
+      // Without Firebase, only the explicitly selected demo profiles are available.
       setIsAuthLoading(false);
-      setCurrentUser(DEMO_CARETAKER);
+      setAuthNotice('Firebase is not configured. Sign in and registration require Firebase; use a demo profile to explore the app.');
+      setCurrentUser(null);
     }
   }, []);
+
+  // Keep account-scoped data from a previous session out of the next account's view.
+  useEffect(() => {
+    if (!currentUser) {
+      setDevice({
+        id: 'Unassigned',
+        serialNumber: 'Not paired',
+        macAddress: 'No device paired',
+        firmwareVersion: 'Awaiting sync',
+        status: 'not_connected',
+        lastSync: new Date().toISOString(),
+      });
+      setEvents([]);
+      setPatients([]);
+      return;
+    }
+
+    if (currentUser.isDemo) {
+      setDevice(INITIAL_DEVICE_INFO);
+      setEvents(INITIAL_FALL_EVENTS);
+      setPatients(INITIAL_LINKED_PATIENTS);
+      return;
+    }
+
+    setDevice({
+      id: currentUser.deviceId || 'Unassigned',
+      serialNumber: currentUser.deviceId || 'Not paired',
+      macAddress: currentUser.deviceId ? 'Waiting for device data' : 'No device paired',
+      firmwareVersion: 'Awaiting sync',
+      status: 'not_connected',
+      lastSync: new Date().toISOString(),
+    });
+    setEvents([]);
+    setPatients([]);
+  }, [currentUser?.id, currentUser?.isDemo, currentUser?.role, currentUser?.deviceId]);
 
   // 2. Realtime Database subscriptions when a real (non-demo) user is authenticated
   useEffect(() => {
@@ -85,18 +128,14 @@ export default function App() {
     // A. If Patient: subscribe to device telemetry & fall events
     if (currentUser.role === 'user') {
       const unsubDev = subscribeToDevice(currentUser.deviceId, (liveDevice) => {
-        if (liveDevice) {
-          setDevice(liveDevice);
-        } else {
-          setDevice({
-            id: currentUser.deviceId || 'Unassigned',
-            serialNumber: currentUser.deviceId || 'Not paired',
-            macAddress: 'Waiting for device data',
-            firmwareVersion: 'Awaiting sync',
-            status: 'not_connected',
-            lastSync: new Date().toISOString(),
-          });
-        }
+        setDevice(liveDevice || {
+          id: currentUser.deviceId || 'Unassigned',
+          serialNumber: currentUser.deviceId || 'Not paired',
+          macAddress: currentUser.deviceId ? 'Waiting for device data' : 'No device paired',
+          firmwareVersion: 'Awaiting sync',
+          status: 'not_connected',
+          lastSync: new Date().toISOString(),
+        });
       });
 
       const unsubEvents = subscribeToFallEvents(currentUser, (liveEvents) => {
@@ -170,9 +209,9 @@ export default function App() {
 
   const handleSwitchRole = (newRole: UserRole) => {
     if (newRole === 'user') {
-      setCurrentUser(DEMO_PATIENT);
+      setCurrentUser({ ...DEMO_PATIENT, isDemo: true });
     } else {
-      setCurrentUser(DEMO_CARETAKER);
+      setCurrentUser({ ...DEMO_CARETAKER, isDemo: true });
     }
     setCurrentView('dashboard');
   };
