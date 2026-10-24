@@ -1,7 +1,9 @@
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
 import express from 'express';
 import type { Server } from 'http';
+import type { Request, Response } from 'express';
 import vercelHeartbeatHandler from '../../api/device/heartbeat';
 import vercelEventHandler from '../../api/device/event';
 import {
@@ -296,6 +298,31 @@ test('12. Vercel device endpoints reject non-POST methods', async () => {
   assert.equal(res.headers.get('allow'), 'POST');
   const data = await res.json();
   assert.equal(data.code, 'METHOD_NOT_ALLOWED');
+});
+
+test('12a. Vercel handler works with a native Node response object', async () => {
+  const nativeServer = createServer(async (req, res) => {
+    (req as Request).body = {};
+    await vercelHeartbeatHandler(req as Request, res as unknown as Response);
+  });
+
+  await new Promise<void>((resolve) => nativeServer.listen(0, '127.0.0.1', resolve));
+  const address = nativeServer.address();
+  assert.ok(address && typeof address === 'object');
+
+  try {
+    const res = await fetch(`http://127.0.0.1:${address.port}/api/device/heartbeat`, {
+      method: 'POST',
+    });
+
+    assert.equal(res.status, 401);
+    assert.match(res.headers.get('content-type') || '', /application\/json/);
+    assert.equal((await res.json()).code, 'MISSING_DEVICE_CREDENTIALS');
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      nativeServer.close((err) => (err ? reject(err) : resolve()));
+    });
+  }
 });
 
 test('13. Production requests fail instead of writing to the in-memory fallback', async () => {
