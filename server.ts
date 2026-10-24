@@ -4,8 +4,8 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-import { deviceRouter } from './src/server/deviceRoutes';
-import { initFirebaseAdmin } from './src/server/adminDb';
+import { deviceRouter } from './src/server/deviceRouter.js';
+import { initFirebaseAdmin } from './src/server/adminDb.js';
 
 dotenv.config();
 

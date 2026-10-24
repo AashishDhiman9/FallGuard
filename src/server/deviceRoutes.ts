@@ -1,14 +1,12 @@
-import { Router, Request, Response } from 'express';
-import { verifyDeviceAuth } from './auth';
+import type { Request, Response } from 'express';
+import { verifyDeviceAuth } from './auth.js';
 import {
   getPatientByDevice,
   updateDeviceHeartbeat,
   getFallEvent,
   recordFallEvent,
-} from './adminDb';
-import type { FallEvent } from '../types';
-
-export const deviceRouter = Router();
+} from './adminDb.js';
+import type { FallEvent } from '../types.js';
 
 /**
  * POST /api/device/heartbeat
@@ -79,8 +77,6 @@ export async function handleDeviceHeartbeat(req: Request, res: Response): Promis
     });
   }
 }
-
-deviceRouter.post('/heartbeat', handleDeviceHeartbeat);
 
 /**
  * POST /api/device/event
@@ -214,5 +210,3 @@ export async function handleDeviceEvent(req: Request, res: Response): Promise<vo
     });
   }
 }
-
-deviceRouter.post('/event', handleDeviceEvent);

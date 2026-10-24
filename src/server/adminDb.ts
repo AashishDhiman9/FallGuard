@@ -1,6 +1,6 @@
 import { cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getDatabase, type Database } from 'firebase-admin/database';
-import type { FallEvent, DeviceInfo } from '../types';
+import type { FallEvent, DeviceInfo } from '../types.js';
 
 let adminInitialized = false;
 let adminDb: Database | null = null;

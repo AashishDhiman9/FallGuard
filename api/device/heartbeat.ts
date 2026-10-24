@@ -1,5 +1,5 @@
-import { handleDeviceHeartbeat } from '../../src/server/deviceRoutes';
-import { createVercelPostHandler } from '../../src/server/vercelHandler';
+import { handleDeviceHeartbeat } from '../../src/server/deviceRoutes.js';
+import { createVercelPostHandler } from '../../src/server/vercelHandler.js';
 
 export const config = {
   api: {
