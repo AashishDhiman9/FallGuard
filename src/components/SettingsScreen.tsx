@@ -11,7 +11,7 @@ import { UserProfile } from '../types';
 
 interface SettingsScreenProps {
   user: UserProfile;
-  onUpdateUser: (updated: Partial<UserProfile>) => void;
+  onUpdateUser: (updated: Partial<UserProfile>) => Promise<void>;
   onBackToDashboard: () => void;
 }
 
@@ -34,26 +34,32 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   });
 
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onUpdateUser({
-      name: formData.name,
-      email: formData.email,
-      phone: formData.phone,
-      emergencyContact: formData.emergencyContact,
-      caretakerName: formData.caretakerName,
-      caretakerEmail: formData.caretakerEmail,
-      sensitivity: formData.sensitivity as 'standard' | 'high' | 'assisted_living',
-      notifications: {
-        sms: formData.smsNotifications,
-        email: formData.emailNotifications,
-        push: formData.pushNotifications,
-      },
-    });
-
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 3000);
+    setSaveError(null);
+    setSavedSuccess(false);
+    try {
+      await onUpdateUser({
+        name: formData.name,
+        email: formData.email,
+        phone: formData.phone,
+        emergencyContact: formData.emergencyContact,
+        caretakerName: formData.caretakerName,
+        caretakerEmail: formData.caretakerEmail.trim(),
+        sensitivity: formData.sensitivity as 'standard' | 'high' | 'assisted_living',
+        notifications: {
+          sms: formData.smsNotifications,
+          email: formData.emailNotifications,
+          push: formData.pushNotifications,
+        },
+      });
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 3000);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Settings could not be saved. Please retry.');
+    }
   };
 
   const isUser = user.role === 'user';
@@ -83,6 +89,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         <div className="p-3 bg-emerald-50 border border-emerald-200 rounded text-xs text-emerald-800 flex items-center gap-2">
           <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
           <span>Settings successfully updated and saved.</span>
+        </div>
+      )}
+      {saveError && (
+        <div className="p-3 bg-rose-50 border border-rose-200 rounded text-xs text-rose-800" role="alert">
+          {saveError}
         </div>
       )}
 
@@ -264,7 +275,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               </div>
               <div>
                 <label className="block font-medium text-slate-700 mb-1">
-                  Caretaker Contact Email
+                  Caretaker Account Email (patient authorization)
                 </label>
                 <input
                   type="email"
@@ -274,6 +285,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   }
                   className="w-full px-3 py-2 border border-slate-300 rounded text-slate-900 focus:outline-none focus:border-teal-700"
                 />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Enter the email used to sign in to the caretaker account. This allows that account to link your profile.
+                </p>
               </div>
             </div>
           </div>

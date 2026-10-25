@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import { deviceRouter } from './src/server/deviceRouter.js';
 import { initFirebaseAdmin } from './src/server/adminDb.js';
 import { handleHealth } from './src/server/healthRoute.js';
+import { handleCaretakerPatientLink } from './src/server/caretakerLinkRoute.js';
 
 dotenv.config();
 
@@ -27,6 +28,9 @@ async function startServer() {
 
   // Device ingestion endpoints for ESP32-C3
   app.use('/api/device', deviceRouter);
+
+  // Authenticated caretaker-to-patient linking endpoint
+  app.post('/api/caretaker/link-patient', handleCaretakerPatientLink);
 
   // Health check endpoint
   app.get('/api/health', handleHealth);

@@ -278,6 +278,118 @@ export async function getPatientByDevice(
   return { uid: record.patientUid, name: record.patientName };
 }
 
+export class CaretakerLinkError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string
+  ) {
+    super(message);
+    this.name = 'CaretakerLinkError';
+  }
+}
+
+export interface CaretakerLinkedPatient {
+  id: string;
+  name: string;
+  email: string;
+  deviceId: string;
+  room: string;
+  deviceStatus: string;
+  lastSeen?: number;
+}
+
+/**
+ * Link only a real patient account that has recorded this caretaker's email
+ * as their designated contact and owns the submitted device ID. The Admin SDK
+ * performs this lookup without opening broad user reads to browser clients.
+ */
+export async function linkPatientWithCaretaker(params: {
+  caretakerUid: string;
+  caretakerEmail: string;
+  patientUid: string;
+  patientEmail: string;
+  deviceId: string;
+}): Promise<CaretakerLinkedPatient> {
+  const firebaseDatabase = getAdminDatabaseOrLocalFallback();
+  if (!firebaseDatabase) {
+    throw new Error('Firebase Admin database is unavailable.');
+  }
+
+  const caretakerEmail = params.caretakerEmail.trim().toLowerCase();
+  const patientEmail = params.patientEmail.trim().toLowerCase();
+  const deviceId = params.deviceId.trim().toUpperCase();
+  if (!caretakerEmail || !patientEmail || !/^FG-[A-Z0-9]{4}(-[A-Z0-9]{1,4})?$/.test(deviceId)) {
+    throw new CaretakerLinkError(400, 'INVALID_LINK_DETAILS', 'Enter the patient account email and a valid device code.');
+  }
+
+  const caretakerSnap = await firebaseDatabase.ref(`users/${params.caretakerUid}`).once('value');
+  const caretaker = caretakerSnap.val() as { role?: unknown; email?: unknown } | null;
+  if (
+    caretaker?.role !== 'caretaker' ||
+    typeof caretaker.email !== 'string' ||
+    caretaker.email.trim().toLowerCase() !== caretakerEmail
+  ) {
+    throw new CaretakerLinkError(403, 'CARETAKER_ACCOUNT_REQUIRED', 'Sign in with a FallGuard caretaker account to link a patient.');
+  }
+
+  const noAuthorizedPatient = () => new CaretakerLinkError(
+    404,
+    'PATIENT_LINK_NOT_AUTHORIZED',
+    'No matching patient account has authorized this caretaker email and device code. Ask the patient to enter your account email in their Settings and confirm their device code.'
+  );
+
+  const patientSnap = await firebaseDatabase.ref(`users/${params.patientUid}`).once('value');
+  const patient = patientSnap.val() as Record<string, unknown> | null;
+  if (
+    !patient ||
+    patient.role !== 'user' ||
+    typeof patient.email !== 'string' ||
+    patient.email.trim().toLowerCase() !== patientEmail ||
+    typeof patient.caretakerEmail !== 'string' ||
+    patient.caretakerEmail.trim().toLowerCase() !== caretakerEmail ||
+    typeof patient.deviceId !== 'string' ||
+    patient.deviceId.trim().toUpperCase() !== deviceId ||
+    (typeof patient.caretakerUid === 'string' && patient.caretakerUid !== params.caretakerUid)
+  ) {
+    throw noAuthorizedPatient();
+  }
+
+  const deviceSnap = await firebaseDatabase.ref(`devices/${deviceId}`).once('value');
+  const device = deviceSnap.val() as { patientUid?: unknown; status?: unknown; lastSeen?: unknown } | null;
+  if (typeof device?.patientUid === 'string' && device.patientUid !== params.patientUid) {
+    throw noAuthorizedPatient();
+  }
+
+  const ownership = await firebaseDatabase.ref(`devices/${deviceId}`).transaction((current) => {
+    const currentDevice = (current || {}) as { patientUid?: string } & Record<string, unknown>;
+    if (currentDevice.patientUid && currentDevice.patientUid !== params.patientUid) return;
+    return {
+      ...currentDevice,
+      deviceId,
+      patientUid: params.patientUid,
+    };
+  });
+  if (!ownership.committed) throw noAuthorizedPatient();
+
+  // Update the roster and patient-side reference together. The device owner map
+  // was transactionally claimed above so concurrent requests cannot steal it.
+  await firebaseDatabase.ref().update({
+    [`caretakers/${params.caretakerUid}/patients/${params.patientUid}`]: true,
+    [`users/${params.patientUid}/caretakerUid`]: params.caretakerUid,
+  });
+
+  return {
+    id: params.patientUid,
+    name: typeof patient.name === 'string' && patient.name.trim() ? patient.name : 'Patient',
+    email: patientEmail,
+    deviceId,
+    room: typeof patient.room === 'string' && patient.room.trim() ? patient.room : 'General Residence',
+    deviceStatus: typeof device?.status === 'string' ? device.status : 'unknown',
+    lastSeen: typeof device?.lastSeen === 'number' ? device.lastSeen : undefined,
+  };
+}
+
 /** Updates only telemetry fields under /devices/{deviceId}, preserving pairing ownership. */
 export async function updateDeviceHeartbeat(
   deviceId: string,

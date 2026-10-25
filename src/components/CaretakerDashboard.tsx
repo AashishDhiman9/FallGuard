@@ -214,10 +214,12 @@ export const CaretakerDashboard: React.FC<CaretakerDashboardProps> = ({
                         </span>
                       </td>
                       <td className="py-3 px-4 font-mono tabular-nums text-slate-700">
-                        <div>{formatTimeAgo(patient.lastSeen)}</div>
-                        <div className="text-[11px] text-slate-400">
-                          {formatTimestamp(patient.lastSeen)}
-                        </div>
+                        <div>{patient.lastSeen ? formatTimeAgo(patient.lastSeen) : 'No telemetry yet'}</div>
+                        {patient.lastSeen && (
+                          <div className="text-[11px] text-slate-400">
+                            {formatTimestamp(patient.lastSeen)}
+                          </div>
+                        )}
                       </td>
                       <td className="py-3 px-4">
                         {hasActiveFall ? (

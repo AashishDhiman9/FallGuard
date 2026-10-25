@@ -11,16 +11,11 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { LinkedPatient } from '../types';
-import {
-  formatTimeAgo,
-  formatTimestamp,
-  getDeviceStatusConfig,
-  validatePairingCode,
-} from '../utils/monitoring';
+import { formatTimeAgo, formatTimestamp, getDeviceStatusConfig, validatePairingCode } from '../utils/monitoring';
 
 interface PatientsScreenProps {
   patients: LinkedPatient[];
-  onAddPatient: (patient: LinkedPatient) => void;
+  onAddPatient: (patient: { email: string; deviceId: string }) => Promise<LinkedPatient>;
   onBackToDashboard: () => void;
 }
 
@@ -30,20 +25,19 @@ export const PatientsScreen: React.FC<PatientsScreenProps> = ({
   onBackToDashboard,
 }) => {
   const [showAddForm, setShowAddForm] = useState(false);
-  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [room, setRoom] = useState('');
   const [deviceId, setDeviceId] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setSuccess(null);
 
-    if (!name.trim()) {
-      setError('Please provide patient name.');
+    if (!email.trim()) {
+      setError('Enter the email address used by the patient’s FallGuard account.');
       return;
     }
 
@@ -53,25 +47,18 @@ export const PatientsScreen: React.FC<PatientsScreenProps> = ({
       return;
     }
 
-    const newPatient: LinkedPatient = {
-      id: `user-${Date.now()}`,
-      name: name.trim(),
-      email: email.trim() || `${name.toLowerCase().replace(/\s+/g, '.')}@example.org`,
-      room: room.trim() || 'Room 101',
-      deviceId: code,
-      deviceStatus: 'online',
-      lastSeen: new Date().toISOString(),
-      currentStatus: 'normal',
-      activeAlertCount: 0,
-    };
-
-    onAddPatient(newPatient);
-    setSuccess(`Patient ${name} successfully added and linked to ${code}.`);
-    setName('');
-    setEmail('');
-    setRoom('');
-    setDeviceId('');
-    setShowAddForm(false);
+    setIsSubmitting(true);
+    try {
+      const linkedPatient = await onAddPatient({ email: email.trim(), deviceId: code });
+      setSuccess(`${linkedPatient.name} is linked to ${linkedPatient.deviceId}.`);
+      setEmail('');
+      setDeviceId('');
+      setShowAddForm(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Patient linking failed. Please retry.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -125,47 +112,22 @@ export const PatientsScreen: React.FC<PatientsScreenProps> = ({
           <h2 className="text-sm font-semibold text-slate-900 mb-3">
             Link New Patient Assignment
           </h2>
+          <p className="text-xs text-slate-600 mb-3">
+            The patient must enter your caretaker account email in their Account Settings before you can link them.
+          </p>
           <form onSubmit={handleSubmit} className="space-y-3 text-xs">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block font-medium text-slate-700 mb-1">
-                  Patient Full Name *
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Robert Caldwell"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded text-slate-900 focus:outline-none focus:border-teal-700"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block font-medium text-slate-700 mb-1">
-                  Contact Email
+                  Patient FallGuard Account Email *
                 </label>
                 <input
                   type="email"
-                  placeholder="e.g. robert.c@example.org"
+                  placeholder="patient@example.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full px-3 py-2 border border-slate-300 rounded text-slate-900 focus:outline-none focus:border-teal-700"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block font-medium text-slate-700 mb-1">
-                  Assigned Room or Residence Unit
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Room 218 or West Wing"
-                  value={room}
-                  onChange={(e) => setRoom(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded text-slate-900 focus:outline-none focus:border-teal-700"
+                  required
                 />
               </div>
 
@@ -187,16 +149,18 @@ export const PatientsScreen: React.FC<PatientsScreenProps> = ({
             <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
-                onClick={() => setShowAddForm(false)}
+                onClick={() => { setShowAddForm(false); setError(null); }}
                 className="px-3 py-1.5 border border-slate-200 text-slate-600 rounded hover:bg-slate-50"
+                disabled={isSubmitting}
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 className="px-4 py-1.5 bg-teal-700 hover:bg-teal-800 text-white font-medium rounded"
+                disabled={isSubmitting}
               >
-                Confirm & Link
+                {isSubmitting ? 'Linking…' : 'Confirm & Link'}
               </button>
             </div>
           </form>
@@ -257,8 +221,8 @@ export const PatientsScreen: React.FC<PatientsScreenProps> = ({
                       </span>
                     </td>
                     <td className="py-2.5 px-4 font-mono tabular-nums text-slate-600">
-                      <div>{formatTimeAgo(patient.lastSeen)}</div>
-                      <div className="text-[10px] text-slate-400">{formatTimestamp(patient.lastSeen)}</div>
+                      <div>{patient.lastSeen ? formatTimeAgo(patient.lastSeen) : 'No telemetry yet'}</div>
+                      {patient.lastSeen && <div className="text-[10px] text-slate-400">{formatTimestamp(patient.lastSeen)}</div>}
                     </td>
                     <td className="py-2.5 px-4">
                       {isFall ? (

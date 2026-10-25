@@ -17,10 +17,10 @@ import { PatientsScreen } from './components/PatientsScreen';
 import { AuthScreen } from './components/AuthScreen';
 import { isFirebaseConfigured } from './firebase/config';
 import { logoutFromFirebase, subscribeToAuthState } from './firebase/auth';
+import { linkPatientToCaretaker } from './firebase/caretaker';
 import {
   acknowledgeFallAlertInDB,
   linkDeviceToPatientInDB,
-  linkPatientToCaretakerInDB,
   subscribeToDevice,
   subscribeToFallEvents,
   subscribeToLinkedPatients,
@@ -226,27 +226,21 @@ export default function App() {
   };
 
   const handleUpdateUser = async (updated: Partial<UserProfile>) => {
-    if (currentUser) {
-      if (!currentUser.isDemo && isFirebaseConfigured) {
-        try {
-          await updateUserSettingsInDB(currentUser.id, updated);
-        } catch (err) {
-          console.error('Error updating user settings in database:', err);
-        }
-      }
-      setCurrentUser((prev) => (prev ? { ...prev, ...updated } : null));
+    if (!currentUser) throw new Error('Sign in again before updating account settings.');
+    if (!currentUser.isDemo && isFirebaseConfigured) {
+      await updateUserSettingsInDB(currentUser.id, updated);
     }
+    setCurrentUser((prev) => (prev ? { ...prev, ...updated } : null));
   };
 
-  const handleAddPatient = async (newPatient: LinkedPatient) => {
-    if (currentUser && !currentUser.isDemo && isFirebaseConfigured) {
-      try {
-        await linkPatientToCaretakerInDB(currentUser.id, newPatient.id);
-      } catch (err) {
-        console.error('Error linking patient in database:', err);
-      }
+  const handleAddPatient = async (patient: { email: string; deviceId: string }): Promise<LinkedPatient> => {
+    if (!currentUser || currentUser.isDemo || !isFirebaseConfigured) {
+      throw new Error('Patient linking requires a signed-in Firebase caretaker account.');
     }
-    setPatients((prev) => [newPatient, ...prev]);
+
+    const linkedPatient = await linkPatientToCaretaker(patient.email, patient.deviceId);
+    setPatients((prev) => [linkedPatient, ...prev.filter((existing) => existing.id !== linkedPatient.id)]);
+    return linkedPatient;
   };
 
   const handleSignOut = async () => {

@@ -1,7 +1,6 @@
 import {
   ref,
   onValue,
-  set,
   update,
   get,
   query,
@@ -326,19 +325,4 @@ export async function linkDeviceToPatientInDB(
     [`devices/${cleanId}/patientUid`]: patientUid,
   };
   await update(ref(database), updates);
-}
-
-/**
- * Links a patient to a caretaker in the database.
- */
-export async function linkPatientToCaretakerInDB(
-  caretakerUid: string,
-  patientUid: string
-): Promise<void> {
-  if (!isFirebaseConfigured || !database) {
-    throw new Error('Firebase database not configured.');
-  }
-
-  const linkRef = ref(database, `caretakers/${caretakerUid}/patients/${patientUid}`);
-  await set(linkRef, true);
 }
