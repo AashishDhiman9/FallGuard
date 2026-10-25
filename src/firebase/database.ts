@@ -277,20 +277,31 @@ export async function linkDeviceToPatientInDB(
   }
 
   const cleanId = deviceId.trim().toUpperCase();
+  if (!/^FG-[A-Z0-9]{4}(-[A-Z0-9]{1,4})?$/.test(cleanId)) {
+    throw new Error('Invalid FallGuard device pairing code.');
+  }
 
-  // 1. Update user profile with deviceId
   const userRef = ref(database, `users/${patientUid}`);
-  await update(userRef, { deviceId: cleanId });
+  const userSnap = await get(userRef);
+  if (!userSnap.exists()) {
+    throw new Error('Patient profile not found; device was not paired.');
+  }
 
-  // 2. Initialize device node
-  const devRef = ref(database, `devices/${cleanId}`);
-  await set(devRef, {
-    deviceId: cleanId,
-    patientUid: patientUid,
-    status: 'not_connected',
-    lastSeen: Date.now(),
-    firmwareVersion: 'Awaiting sync',
-  });
+  const user = userSnap.val();
+  if (user.role && user.role !== 'user') {
+    throw new Error('Only a patient profile can own a monitoring device.');
+  }
+
+  // Keep the profile and canonical owner map in sync in one atomic RTDB update.
+  // Updating just these fields preserves existing telemetry. The database write
+  // rule rejects an ID that is already owned by another patient, without
+  // requiring an unpaired device to be readable by the patient.
+  const updates: Record<string, unknown> = {
+    [`users/${patientUid}/deviceId`]: cleanId,
+    [`devices/${cleanId}/deviceId`]: cleanId,
+    [`devices/${cleanId}/patientUid`]: patientUid,
+  };
+  await update(ref(database), updates);
 }
 
 /**

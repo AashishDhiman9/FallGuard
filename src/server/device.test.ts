@@ -213,7 +213,9 @@ test('9. Valid confirmed fall event is recorded and returns 201 Created', async 
   // Verify record exists in server database
   const recorded = await getFallEvent(testEventId);
   assert.ok(recorded !== null);
-  assert.equal(recorded?.userId, 'user-eleanor');
+  assert.equal(recorded?.patientUid, 'user-eleanor');
+  assert.equal(recorded?.patientName, 'Eleanor Vance');
+  assert.equal('userId' in (recorded || {}), false);
   assert.equal(recorded?.status, 'active');
   assert.equal(recorded?.location, 'En-suite Bathroom');
 });
@@ -243,7 +245,8 @@ test('10. Client cannot forge or override patient UID (server enforces ownership
   assert.equal(data.patientUid, 'user-eleanor');
 
   const recorded = await getFallEvent(testEventId);
-  assert.equal(recorded?.userId, 'user-eleanor');
+  assert.equal(recorded?.patientUid, 'user-eleanor');
+  assert.equal('userId' in (recorded || {}), false);
 });
 
 test('11. Duplicate event ID returns 200 OK without creating duplicate record (idempotency)', async () => {

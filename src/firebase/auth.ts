@@ -8,6 +8,8 @@ import {
 } from 'firebase/auth';
 import { ref, get, set, serverTimestamp } from 'firebase/database';
 import { auth, database, isFirebaseConfigured } from './config';
+import { linkDeviceToPatientInDB } from './database';
+import { validatePairingCode } from '../utils/monitoring';
 import { UserProfile, UserRole } from '../types';
 
 const USER_PROFILE_TIMEOUT_MS = 10_000;
@@ -38,6 +40,11 @@ export async function registerWithFirebase(params: {
     throw new Error('Firebase is not configured. Set environment variables in .env first.');
   }
 
+  const requestedDeviceId = params.deviceId?.trim().toUpperCase() || '';
+  if (requestedDeviceId && !validatePairingCode(requestedDeviceId)) {
+    throw new Error('Enter a valid FallGuard device pairing code.');
+  }
+
   const userCredential = await createUserWithEmailAndPassword(
     auth,
     params.email.trim(),
@@ -63,28 +70,20 @@ export async function registerWithFirebase(params: {
   };
 
   if (params.role === 'user') {
-    profileData.deviceId = params.deviceId ? params.deviceId.trim().toUpperCase() : '';
+    profileData.deviceId = requestedDeviceId;
     profileData.caretakerEmail = params.caretakerEmail ? params.caretakerEmail.trim() : '';
     profileData.sensitivity = 'standard';
     profileData.room = 'Unit 1';
 
-    // If deviceId provided, register placeholder in /devices
-    if (params.deviceId) {
-      const cleanDevId = params.deviceId.trim().toUpperCase();
-      const devRef = ref(database, `devices/${cleanDevId}`);
-      await set(devRef, {
-        deviceId: cleanDevId,
-        patientUid: fbUser.uid,
-        status: 'not_connected',
-        lastSeen: createdAt,
-        firmwareVersion: 'Pending telemetry',
-      });
-    }
   }
 
   // Persist user record in RTDB
   const userRef = ref(database, `users/${fbUser.uid}`);
   await set(userRef, profileData);
+
+  if (params.role === 'user' && requestedDeviceId) {
+    await linkDeviceToPatientInDB(fbUser.uid, requestedDeviceId);
+  }
 
   return {
     id: fbUser.uid,
@@ -92,7 +91,7 @@ export async function registerWithFirebase(params: {
     email: fbUser.email || params.email,
     role: params.role,
     createdAt: createdAt,
-    deviceId: params.deviceId,
+    deviceId: requestedDeviceId || undefined,
     caretakerEmail: params.caretakerEmail,
     notifications: {
       sms: true,

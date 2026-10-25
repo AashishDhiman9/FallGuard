@@ -26,8 +26,8 @@ export function getDeviceCredentials(): Record<string, string> {
       }
     }
     return normalized;
-  } catch (err) {
-    console.error('Failed to parse FALLGUARD_DEVICE_CREDENTIALS environment variable:', err);
+  } catch {
+    console.error('[FallGuard Auth] FALLGUARD_DEVICE_CREDENTIALS must be valid JSON.');
     return {};
   }
 }

@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { verifyDeviceAuth } from './auth.js';
 import {
   getPatientByDevice,
+  logFirebaseError,
   updateDeviceHeartbeat,
   getFallEvent,
   recordFallEvent,
@@ -69,7 +70,7 @@ export async function handleDeviceHeartbeat(req: Request, res: Response): Promis
       batteryRecorded: batteryLevel !== undefined,
     });
   } catch (err) {
-    console.error(`Error updating heartbeat for ${deviceId}:`, err);
+    logFirebaseError('heartbeat write', err);
     res.status(500).json({
       status: 'error',
       code: 'DATABASE_ERROR',
@@ -123,7 +124,7 @@ export async function handleDeviceEvent(req: Request, res: Response): Promise<vo
   try {
     patient = await getPatientByDevice(deviceId);
   } catch (err) {
-    console.error(`Error resolving patient for ${deviceId}:`, err);
+    logFirebaseError('device owner lookup', err);
     res.status(500).json({
       status: 'error',
       code: 'DATABASE_ERROR',
@@ -184,7 +185,16 @@ export async function handleDeviceEvent(req: Request, res: Response): Promise<vo
     };
 
     // 6. Write verified event to Realtime Database
-    await recordFallEvent(newEvent);
+    await recordFallEvent({
+      id: newEvent.id,
+      patientUid: newEvent.userId,
+      patientName: newEvent.userName,
+      timestamp: newEvent.timestamp,
+      type: newEvent.type,
+      status: newEvent.status,
+      location: newEvent.location,
+      notes: newEvent.notes,
+    });
 
     // Also update device status as online
     await updateDeviceHeartbeat(deviceId, {
@@ -202,7 +212,7 @@ export async function handleDeviceEvent(req: Request, res: Response): Promise<vo
       message: 'Fall event verified, recorded, and dispatched to caretaker portal.',
     });
   } catch (err) {
-    console.error(`Error processing fall event for ${deviceId}:`, err);
+    logFirebaseError('fall event processing', err);
     res.status(500).json({
       status: 'error',
       code: 'DATABASE_ERROR',

@@ -24,6 +24,8 @@ These filesystem routes invoke the same handlers mounted by the local Express se
 
 Configure these variables in Vercel for **Production** (and **Preview** if those deployments should accept devices):
 
+For this Firebase project, the Realtime Database URL is `https://fallguard-929ff-default-rtdb.asia-southeast1.firebasedatabase.app`. Use this exact region-specific URL for both `VITE_FIREBASE_DATABASE_URL` and `FIREBASE_DATABASE_URL`; the older `.firebaseio.com` host points to the wrong region. Vite embeds the `VITE_` value at build time, so redeploy after changing it in Vercel.
+
 | Variable | Visibility | Purpose |
 | --- | --- | --- |
 | `VITE_FIREBASE_API_KEY` | Config | Firebase web app configuration |
@@ -41,6 +43,26 @@ Configure these variables in Vercel for **Production** (and **Preview** if those
 The `VITE_` variables are embedded in the browser bundle and must not contain private credentials. Keep the service account JSON and device token registry unprefixed and server-side. Production requests fail with a database error if Firebase Admin is unavailable; the in-memory adapter is for local development and tests only.
 
 After setting the variables, redeploy the Vercel project. Smoke-test routing without credentials: both POST endpoints should return a JSON `401` response (missing device credentials), not Vercel's platform `404`. An authenticated heartbeat should return `200` after the device ID/token pair is configured and the Admin service account can write to the same Realtime Database.
+
+The Admin SDK requires the service account's `project_id` to be `fallguard-929ff` and the exact region-specific URL above. The service account key and device credentials are read only by server code; never add either value to a `VITE_` variable.
+
+### Database paths and verification
+
+- Heartbeats update `/devices/{UPPERCASE_DEVICE_ID}` (`status`, `lastSeen`, and optional `batteryLevel`/`firmwareVersion`). The update preserves the existing `patientUid` owner field.
+- Pairing atomically writes `/users/{uid}/deviceId` and `/devices/{UPPERCASE_DEVICE_ID}/{deviceId,patientUid}`. Existing telemetry on the device node is preserved. A device already owned by another UID is rejected.
+- Fall events are written to `/fall_events/{eventId}` with `patientUid` and `patientName`, matching the frontend query and the checked-in rules. If an older account only has `/users/{uid}/deviceId`, the API repairs `/devices/{deviceId}/patientUid` on lookup only when exactly one user matches.
+
+`GET /api/health` is a read-only diagnostic. It reads only the reserved `__fallguard_health_probe__` node and returns Firebase Admin and Realtime Database readiness states, never a URL, credential, or patient field. A `200` means the Admin SDK initialized and a real database read succeeded; it does not prove that a device write was accepted. A `503` means to check the server-side variables and Vercel function logs, which emit safe error codes without service-account contents.
+
+For a real write check after deployment:
+
+1. In Vercel Production, set `FIREBASE_DATABASE_URL` to `https://fallguard-929ff-default-rtdb.asia-southeast1.firebasedatabase.app`, set `FIREBASE_SERVICE_ACCOUNT_KEY` to the Firebase service account JSON for project `fallguard-929ff`, and ensure `FALLGUARD_DEVICE_CREDENTIALS` contains the matching token for `FG-8821-X`.
+2. Publish the checked-in `database.rules.json` from Firebase Console → Realtime Database → Rules. Keep the scoped authenticated rules; do not add root-wide public `.read` or `.write` grants. Firebase Admin writes use the service account, while browser pairing and reading continue to be governed by these rules.
+3. Deploy the changes to Vercel Production. Check `GET https://fallguard-aashish-eca0.vercel.app/api/health` and expect `200` with both checks ready/reachable.
+4. Send one authenticated heartbeat and expect `200`. Confirm in Realtime Database that `/devices/FG-8821-X/lastSeen` changes and the paired `patientUid` remains present. This confirms an actual production write.
+5. To verify event ingestion, use a dedicated test patient/device pairing and a controlled test event. Expect `201`, then confirm `/fall_events/{eventId}` has `patientUid` and `patientName`. A successful heartbeat alone does not verify event ownership resolution.
+
+Do not use a real patient's device for the event test unless you intend to create an alert in that patient's dashboard.
 
 ## Useful scripts
 

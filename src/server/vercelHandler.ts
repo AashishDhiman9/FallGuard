@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import type { ServerResponse } from 'node:http';
 
 type PostHandler = (req: Request, res: Response) => Promise<void>;
+type ApiHandler = (req: Request, res: Response) => Promise<void>;
 
 /** Bridges Express's chainable response helpers to Vercel's native Node response. */
 function createExpressResponse(res: ServerResponse): Response {
@@ -30,24 +31,27 @@ function createExpressResponse(res: ServerResponse): Response {
 }
 
 /** Adapts the existing Express route handler to a Vercel Node function. */
-export function createVercelPostHandler(handler: PostHandler): PostHandler {
+export function createVercelMethodHandler(
+  handler: ApiHandler,
+  method: 'GET' | 'POST'
+): ApiHandler {
   return async (req, rawRes) => {
     const res = createExpressResponse(rawRes as unknown as ServerResponse);
 
-    if (req.method !== 'POST') {
-      res.setHeader('Allow', 'POST');
+    if (req.method !== method) {
+      res.setHeader('Allow', method);
       res.status(405).json({
         status: 'error',
         code: 'METHOD_NOT_ALLOWED',
-        message: 'This endpoint accepts POST requests only.',
+        message: `This endpoint accepts ${method} requests only.`,
       });
       return;
     }
 
     try {
       await handler(req, res);
-    } catch (err) {
-      console.error('Unhandled device API function error:', err);
+    } catch {
+      console.error(`[FallGuard API] Unhandled ${method} function error.`);
       if (!res.headersSent) {
         res.status(500).json({
           status: 'error',
@@ -57,4 +61,12 @@ export function createVercelPostHandler(handler: PostHandler): PostHandler {
       }
     }
   };
+}
+
+export function createVercelPostHandler(handler: PostHandler): PostHandler {
+  return createVercelMethodHandler(handler, 'POST');
+}
+
+export function createVercelGetHandler(handler: ApiHandler): ApiHandler {
+  return createVercelMethodHandler(handler, 'GET');
 }

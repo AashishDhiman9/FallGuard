@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 
 import { deviceRouter } from './src/server/deviceRouter.js';
 import { initFirebaseAdmin } from './src/server/adminDb.js';
+import { handleHealth } from './src/server/healthRoute.js';
 
 dotenv.config();
 
@@ -28,14 +29,7 @@ async function startServer() {
   app.use('/api/device', deviceRouter);
 
   // Health check endpoint
-  app.get('/api/health', (req, res) => {
-    res.status(200).json({
-      status: 'ok',
-      service: 'FallGuard Backend Gateway',
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-    });
-  });
+  app.get('/api/health', handleHealth);
 
   if (!isProd) {
     // In development mode, mount Vite middleware to serve client SPA with HMR/bundling

@@ -1,6 +1,7 @@
 {
   "rules": {
     "users": {
+      ".indexOn": ["deviceId"],
       "$uid": {
         // Patients can read their own profile; Caretakers can read their linked patients' profiles
         ".read": "auth != null && (auth.uid === $uid || root.child('caretakers').child(auth.uid).child('patients').child($uid).val() === true)",
