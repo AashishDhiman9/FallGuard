@@ -1,6 +1,8 @@
 import { auth } from './config';
 import type { LinkedPatient } from '../types';
 
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
+
 interface LinkResponse {
   status: 'ok';
   patient: {
@@ -23,7 +25,7 @@ export async function linkPatientToCaretaker(
   if (!signedInUser) throw new Error('Sign in again before linking a patient.');
 
   const token = await signedInUser.getIdToken();
-  const response = await fetch('/api/caretaker/link-patient', {
+  const response = await fetch(`${API_BASE_URL}/api/caretaker/link-patient`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

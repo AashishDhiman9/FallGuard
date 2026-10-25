@@ -4,6 +4,50 @@ import type { ServerResponse } from 'node:http';
 type PostHandler = (req: Request, res: Response) => Promise<void>;
 type ApiHandler = (req: Request, res: Response) => Promise<void>;
 
+function isAllowedOrigin(origin: string): boolean {
+  return origin === 'https://localhost' ||
+    origin === 'https://fallguard-aashish-eca0.vercel.app' ||
+    /^https:\/\/fallguard-[a-z0-9-]+-aashish-eca0\.vercel\.app$/i.test(origin);
+}
+
+function addCorsHeaders(res: ServerResponse, origin: string, method: 'GET' | 'POST'): void {
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Access-Control-Allow-Methods', `${method}, OPTIONS`);
+  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+  res.setHeader('Access-Control-Max-Age', '600');
+  res.setHeader('Vary', 'Origin');
+}
+
+function handleCors(req: Request, rawRes: ServerResponse, method: 'GET' | 'POST'): boolean {
+  const origin = req.headers.origin;
+  if (req.method === 'OPTIONS') {
+    if (typeof origin === 'string' && isAllowedOrigin(origin)) {
+      addCorsHeaders(rawRes, origin, method);
+      rawRes.statusCode = 204;
+    } else {
+      rawRes.statusCode = 403;
+    }
+    rawRes.end();
+    return true;
+  }
+
+  if (typeof origin === 'string') {
+    if (!isAllowedOrigin(origin)) {
+      rawRes.statusCode = 403;
+      rawRes.setHeader('Content-Type', 'application/json; charset=utf-8');
+      rawRes.end(JSON.stringify({
+        status: 'error',
+        code: 'CORS_ORIGIN_NOT_ALLOWED',
+        message: 'This app origin is not allowed to access the API.',
+      }));
+      return true;
+    }
+    addCorsHeaders(rawRes, origin, method);
+  }
+
+  return false;
+}
+
 /** Bridges Express's chainable response helpers to Vercel's native Node response. */
 function createExpressResponse(res: ServerResponse): Response {
   const response = {
@@ -36,6 +80,8 @@ export function createVercelMethodHandler(
   method: 'GET' | 'POST'
 ): ApiHandler {
   return async (req, rawRes) => {
+    const nodeResponse = rawRes as unknown as ServerResponse;
+    if (handleCors(req, nodeResponse, method)) return;
     const res = createExpressResponse(rawRes as unknown as ServerResponse);
 
     if (req.method !== method) {

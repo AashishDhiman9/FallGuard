@@ -36,6 +36,7 @@ For this Firebase project, the Realtime Database URL is `https://fallguard-929ff
 | `VITE_FIREBASE_MESSAGING_SENDER_ID` | Config | Firebase web app configuration |
 | `VITE_FIREBASE_APP_ID` | Config | Firebase web app configuration |
 | `VITE_FIREBASE_MEASUREMENT_ID` | Config | Optional; only needed if analytics is added |
+| `VITE_API_BASE_URL` | Config | Optional public API origin; the Android build gets this from `.env.android` |
 | `FIREBASE_DATABASE_URL` | Config | Server-side Firebase Admin database target; use the exact Realtime Database URL |
 | `FIREBASE_SERVICE_ACCOUNT_KEY` | Secret | Firebase Admin service account JSON, stored as one JSON string |
 | `FALLGUARD_DEVICE_CREDENTIALS` | Secret | JSON map from normalized device IDs to their pre-shared tokens |
@@ -64,9 +65,27 @@ For a real write check after deployment:
 
 Do not use a real patient's device for the event test unless you intend to create an alert in that patient's dashboard.
 
+## Android app (Capacitor)
+
+The Android app bundles the Vite frontend in the native project and connects to the production API at `https://fallguard-aashish-eca0.vercel.app`. Firebase client configuration is embedded at build time from the public `VITE_FIREBASE_*` variables. Never place `FIREBASE_SERVICE_ACCOUNT_KEY` or `FALLGUARD_DEVICE_CREDENTIALS` in the Android app.
+
+Requirements: Node.js 22 or newer, Android Studio 2025.2.1 or newer, and an Android SDK installed through Android Studio. Capacitor 8 requires Android Studio and an Android SDK; Android Studio supplies the JDK used by Gradle.
+
+From the repository root:
+
+1. Install packages with `npm install`.
+2. Ensure `.env` has the public `VITE_FIREBASE_*` values from the Firebase Web App settings.
+3. Build the Android web bundle and synchronize it into the native project with `npm run android:build`.
+4. Open the project in Android Studio with `npm run android:open`, allow Gradle sync to finish, then run it on a connected device or emulator.
+5. To create a local debug APK, use **Build → Build APK(s)** in Android Studio. It will be written to `android/app/build/outputs/apk/debug/app-debug.apk`.
+
+After frontend changes, rerun `npm run android:build` before opening or running the Android project so its bundled assets are current. The Android build uses `.env.android` for the public API base URL; the Vercel web build continues to use same-origin `/api` routes. The server allows the Capacitor Android origin (`https://localhost`) for these API calls.
+
 ## Useful scripts
 
 - `npm run dev` starts the server and app.
 - `npm run build` creates the production frontend build.
+- `npm run android:build` creates the Android web bundle and syncs it to Capacitor.
+- `npm run android:open` opens the Android Studio project.
 - `npm run lint` runs the TypeScript check.
 - `npm test` runs the tests.
