@@ -14,7 +14,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "tsx --test src/utils/monitoring.test.ts src/server/adminDb.test.ts src/server/device.test.ts"
+    "test": "tsx --test src/utils/monitoring.test.ts src/firebase/fallEvents.test.ts src/server/adminDb.test.ts src/server/device.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

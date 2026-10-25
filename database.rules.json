@@ -39,16 +39,19 @@
     },
 
     "fall_events": {
-      // Indexed for fast queries by patientUid or status
-      ".indexOn": ["patientUid", "status", "timestamp"],
+      // Allow only exact patient-owned or caretaker-linked event queries.
+      // Realtime Database rules are not filters: the query itself must be authorized here.
+      ".read": "auth != null && query.equalTo != null && (query.orderByChild === 'patientUid' || query.orderByChild === 'userId') && (query.equalTo === auth.uid || root.child('caretakers').child(auth.uid).child('patients').child(query.equalTo).val() === true)",
+      // Keep canonical records and older userId records queryable during transition.
+      ".indexOn": ["patientUid", "userId", "status", "timestamp"],
 
       "$eventId": {
-        // Visible only to the affected patient or their designated caretaker
-        ".read": "auth != null && (data.child('patientUid').val() === auth.uid || root.child('caretakers').child(auth.uid).child('patients').child(data.child('patientUid').val()).val() === true)",
+        // Visible only to the affected patient or their designated caretaker (both schemas).
+        ".read": "auth != null && ((data.hasChild('patientUid') && (data.child('patientUid').val() === auth.uid || root.child('caretakers').child(auth.uid).child('patients').child(data.child('patientUid').val()).val() === true)) || (data.hasChild('userId') && (data.child('userId').val() === auth.uid || root.child('caretakers').child(auth.uid).child('patients').child(data.child('userId').val()).val() === true)))",
 
         // Creation of trusted fall events is restricted to trusted hardware / server-side processes.
         // Caretakers can only acknowledge or resolve existing alerts.
-        ".write": "auth != null && data.exists() && root.child('caretakers').child(auth.uid).child('patients').child(data.child('patientUid').val()).val() === true && newData.child('patientUid').val() === data.child('patientUid').val() && newData.child('timestamp').val() === data.child('timestamp').val() && (newData.child('status').val() === 'acknowledged' || newData.child('status').val() === 'resolved')"
+        ".write": "auth != null && data.exists() && ((data.hasChild('patientUid') && root.child('caretakers').child(auth.uid).child('patients').child(data.child('patientUid').val()).val() === true && newData.child('patientUid').val() === data.child('patientUid').val()) || (data.hasChild('userId') && root.child('caretakers').child(auth.uid).child('patients').child(data.child('userId').val()).val() === true && newData.child('userId').val() === data.child('userId').val())) && newData.child('timestamp').val() === data.child('timestamp').val() && (newData.child('status').val() === 'acknowledged' || newData.child('status').val() === 'resolved')"
       }
     }
   }

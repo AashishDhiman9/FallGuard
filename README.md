@@ -50,7 +50,7 @@ The Admin SDK requires the service account's `project_id` to be `fallguard-929ff
 
 - Heartbeats update `/devices/{UPPERCASE_DEVICE_ID}` (`status`, `lastSeen`, and optional `batteryLevel`/`firmwareVersion`). The update preserves the existing `patientUid` owner field.
 - Pairing atomically writes `/users/{uid}/deviceId` and `/devices/{UPPERCASE_DEVICE_ID}/{deviceId,patientUid}`. Existing telemetry on the device node is preserved. A device already owned by another UID is rejected.
-- Fall events are written to `/fall_events/{eventId}` with `patientUid` and `patientName`, matching the frontend query and the checked-in rules. If an older account only has `/users/{uid}/deviceId`, the API repairs `/devices/{deviceId}/patientUid` on lookup only when exactly one user matches.
+- Fall events are written to `/fall_events/{eventId}` with `patientUid` and `patientName`. The client reads only exact `patientUid` or legacy `userId` queries; caretaker queries are limited to linked patient UIDs. The checked-in rules enforce those query bounds. If an older account only has `/users/{uid}/deviceId`, the API repairs `/devices/{deviceId}/patientUid` on lookup only when exactly one user matches.
 
 `GET /api/health` is a read-only diagnostic. It reads only the reserved `__fallguard_health_probe__` node and returns Firebase Admin and Realtime Database readiness states, never a URL, credential, or patient field. A `200` means the Admin SDK initialized and a real database read succeeded; it does not prove that a device write was accepted. A `503` means to check the server-side variables and Vercel function logs, which emit safe error codes without service-account contents.
 

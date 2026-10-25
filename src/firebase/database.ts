@@ -7,10 +7,11 @@ import {
   query,
   orderByChild,
   equalTo,
-  Unsubscribe,
 } from 'firebase/database';
+import type { DataSnapshot, Query, Unsubscribe } from 'firebase/database';
 import { database, isFirebaseConfigured } from './config';
 import { DeviceInfo, FallEvent, LinkedPatient, UserProfile } from '../types';
+import { normalizeFallEvent } from './fallEvents';
 
 /**
  * Subscribes to live hardware device status from `/devices/{deviceId}`.
@@ -72,71 +73,94 @@ export function subscribeToFallEvents(
   }
 
   const eventsRef = ref(database, 'fall_events');
+  const ownerName = user.role === 'user' ? user.name : 'Monitored Patient';
+  const queryResults = new Map<string, FallEvent[]>();
+  const emitMergedEvents = () => {
+    const eventsById = new Map<string, FallEvent>();
+    for (const events of queryResults.values()) {
+      for (const event of events) eventsById.set(event.id, event);
+    }
+    callback([...eventsById.values()].sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    ));
+  };
+  const subscribeToOwnerQueries = (
+    ownerIds: string[],
+    isCurrentGeneration: () => boolean
+  ): Unsubscribe[] => {
+    const subscriptions: Unsubscribe[] = [];
+    for (const ownerId of ownerIds) {
+      for (const ownerField of ['patientUid', 'userId'] as const) {
+        const key = `${ownerId}:${ownerField}`;
+        const ownerQuery: Query = query(eventsRef, orderByChild(ownerField), equalTo(ownerId));
+        subscriptions.push(onValue(ownerQuery, (snapshot) => {
+          if (!isCurrentGeneration()) return;
+          queryResults.set(key, fallEventsFromSnapshot(snapshot, { userId: ownerId, userName: ownerName }));
+          emitMergedEvents();
+        }, (err) => {
+          if (!isCurrentGeneration()) return;
+          console.warn('Fall events subscription error:', err.message);
+          queryResults.set(key, []);
+          emitMergedEvents();
+        }));
+      }
+    }
+    return subscriptions;
+  };
 
   if (user.role === 'user') {
-    // Patient: query their own events
-    const patientEventsQuery = query(eventsRef, orderByChild('patientUid'), equalTo(user.id));
-    return onValue(patientEventsQuery, (snapshot) => {
-      const list: FallEvent[] = [];
-      if (snapshot.exists()) {
-        snapshot.forEach((child) => {
-          const val = child.val();
-          list.push({
-            id: child.key || val.id,
-            userId: val.patientUid || user.id,
-            userName: val.patientName || user.name,
-            timestamp: typeof val.timestamp === 'number'
-              ? new Date(val.timestamp).toISOString()
-              : val.timestamp || new Date().toISOString(),
-            type: val.type || 'confirmed_fall',
-            status: val.status || 'active',
-            location: val.location,
-            acknowledgedAt: val.acknowledgedAt
-              ? (typeof val.acknowledgedAt === 'number' ? new Date(val.acknowledgedAt).toISOString() : val.acknowledgedAt)
-              : undefined,
-            acknowledgedBy: val.acknowledgedByName,
-            notes: val.notes,
-          });
-        });
-      }
-      list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      callback(list);
-    }, (err) => {
-      console.warn('Fall events subscription error:', err.message);
-      callback([]);
-    });
-  } else {
-    // Caretaker: listen to fall events
-    return onValue(eventsRef, (snapshot) => {
-      const list: FallEvent[] = [];
-      if (snapshot.exists()) {
-        snapshot.forEach((child) => {
-          const val = child.val();
-          list.push({
-            id: child.key || val.id,
-            userId: val.patientUid,
-            userName: val.patientName || 'Monitored Patient',
-            timestamp: typeof val.timestamp === 'number'
-              ? new Date(val.timestamp).toISOString()
-              : val.timestamp || new Date().toISOString(),
-            type: val.type || 'confirmed_fall',
-            status: val.status || 'active',
-            location: val.location,
-            acknowledgedAt: val.acknowledgedAt
-              ? (typeof val.acknowledgedAt === 'number' ? new Date(val.acknowledgedAt).toISOString() : val.acknowledgedAt)
-              : undefined,
-            acknowledgedBy: val.acknowledgedByName,
-            notes: val.notes,
-          });
-        });
-      }
-      list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      callback(list);
-    }, (err) => {
-      console.warn('Caretaker fall events subscription error:', err.message);
-      callback([]);
-    });
+    // Keep both canonical patientUid records and legacy userId records.
+    const subscriptions = subscribeToOwnerQueries([user.id], () => true);
+    return () => subscriptions.forEach((unsubscribe) => unsubscribe());
   }
+
+  // A caretaker may only query events for explicitly linked patient IDs.
+  const linkedPatientsRef = ref(database, `caretakers/${user.id}/patients`);
+  let generation = 0;
+  let eventSubscriptions: Unsubscribe[] = [];
+  const unsubscribeLinks = onValue(linkedPatientsRef, (snapshot) => {
+    const currentGeneration = ++generation;
+    eventSubscriptions.forEach((unsubscribe) => unsubscribe());
+    eventSubscriptions = [];
+    queryResults.clear();
+
+    const ownerIds: string[] = [];
+    snapshot.forEach((child) => {
+      if (child.val() === true && child.key) ownerIds.push(child.key);
+      return false;
+    });
+    if (ownerIds.length === 0) {
+      callback([]);
+      return;
+    }
+
+    eventSubscriptions = subscribeToOwnerQueries(
+      ownerIds,
+      () => generation === currentGeneration
+    );
+  }, (err) => {
+    console.warn('Caretaker patient subscription error:', err.message);
+    callback([]);
+  });
+
+  return () => {
+    generation += 1;
+    unsubscribeLinks();
+    eventSubscriptions.forEach((unsubscribe) => unsubscribe());
+  };
+}
+
+function fallEventsFromSnapshot(
+  snapshot: DataSnapshot,
+  fallbackOwner: { userId: string; userName: string }
+): FallEvent[] {
+  const events: FallEvent[] = [];
+  snapshot.forEach((child) => {
+    const event = normalizeFallEvent(child.key || '', child.val(), fallbackOwner);
+    if (event) events.push(event);
+    return false;
+  });
+  return events;
 }
 
 /**
